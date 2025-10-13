@@ -3,13 +3,13 @@
 
 int main() {
     time_t now;
-    struct tm *sp;
+    struct tm *tp;
 
     time(&now);
-    sp = gmtime(&now);
-    sp->tm_hour -= 8;
-    mktime(sp);
+    tp = gmtime(&now);
+    tp->tm_hour -= 8;
+    mktime(tp);
 
     printf("//- Время в Калифорнии: %02d:%02d / День: %02d/%02d -//\n",
-           sp->tm_hour, sp->tm_min, sp->tm_mday, sp->tm_mon+1);
+           tp->tm_hour, tp->tm_min, tp->tm_mday, tp->tm_mon+1);
 }
