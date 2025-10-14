@@ -47,11 +47,11 @@ int main()
 
     while(1)
     {
-        printf("Введите номер строки (1-%d): ", count_str);
+        printf("\nВведите номер строки (1-%d): ", count_str);
         int n;
         scanf("%d", &n);
 
-        if (n == 0) { break; }
+        if (n == 0 || n > count_str)  { break; }
 
         lseek(str, pos_str[n-1], 0);
 
