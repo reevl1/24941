@@ -3,90 +3,78 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <errno.h>
+#include <stdlib.h>
 
-volatile bool timeout = false;
+volatile sig_atomic_t timeout = 0;
 
-void timeout_handler(int sig) {
-    timeout = true; 
-}
+void timeout_handler(int sig) { (void)sig; timeout = 1; }
 
-int main()
-{
-    int str = open("input.txt", O_RDONLY);
+int main(void) {
+    int fd = open("input.txt", O_RDONLY);
+    if (fd < 0) { perror("open"); return 1; }
 
-    char buffer[1024];
-    int read_bites = read(str, buffer, sizeof(buffer));
+    char buffer[4096];
+    ssize_t nread = read(fd, buffer, sizeof buffer);
+    if (nread < 0) { perror("read"); return 1; }
 
-    int count_str = 0;
-    for (int i = 0; i < read_bites; i++) { 
-        if (buffer[i] == '\n') { 
-            count_str++;
-        } 
-    }
+    int lines = 1;
+    for (ssize_t i = 0; i < nread; ++i) if (buffer[i] == '\n') ++lines;
 
-    int pos_str[++count_str];
-    pos_str[0] = 0;
+    int pos_sz = lines + 1;
+    int pos[pos_sz];
+    pos[0] = 0;
     int idx = 1;
+    for (ssize_t i = 0; i < nread; ++i)
+        if (buffer[i] == '\n') pos[idx++] = (int)i + 1;
+    pos[lines] = (int)nread;
 
-    for (int i = 0; i < read_bites; i++)
-    {
-        if (buffer[i] == '\n') 
-        {
-            pos_str[idx] = i + 1;
-            idx++;
-        }
-    }
+    struct sigaction sa = {0};
+    sa.sa_handler = timeout_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    if (sigaction(SIGALRM, &sa, NULL) == -1) { perror("sigaction"); return 1; }
 
-    pos_str[count_str] = read_bites;
-
-    printf("//- Таблица -//\n");
-    for (int j = 0; j < count_str; j++)
-    {
-        printf("%d = ", j+1);
-
-        lseek(str, pos_str[j], 0);
-
-        int index = pos_str[j+1] - pos_str[j];
-        char output[index];
-        read(str, output, index);
-
-        for (int i = 0; i < index; i++) { printf("%c", output[i]); }
-        printf("\n");
-    }
-
-    signal(SIGALRM, timeout_handler);
-
-    while(1)
-    {
+    for (;;) {
+        timeout = 0;
         alarm(5);
 
-        printf("Введите номер строки (1-%d): ", count_str);
-        int n;
-        int result = scanf("%d", &n);
+        printf("Введите номер строки (1-%d): ", lines);
+        fflush(stdout);
 
-        if (n == 0) { 
-            break; 
-        }
-
-        if (result == 1)
-        {
-            alarm(0);
-
-            lseek(str, pos_str[n-1], SEEK_SET);
-
-            int index = pos_str[n] - pos_str[n-1];
-            char output[index];
-            read(str, output, index);
-
-            for (int i = 0; i < index; i++) { 
-                printf("%c", output[i]); 
+        char inbuf[32];
+        ssize_t r = read(STDIN_FILENO, inbuf, sizeof inbuf - 1);
+        if (r < 0) {
+            if (errno == EINTR && timeout) {
+                printf("\n");
+                printf("----------------------------------------------------------------\n");
+                write(STDOUT_FILENO, buffer, nread);
+                write(STDOUT_FILENO, "\n", 1);
+                break;
+            } else {
+                perror("read(stdin)");
+                break;
             }
-            lseek(str, pos_str[n-1], 0);
+        }
 
+        alarm(0);
+        inbuf[r] = '\0';
+        int num = atoi(inbuf);
+
+        if (num == 0) break;
+        if (num < 1 || num > lines) {
+            puts("Нет такой строки.");
+            continue;
         }
-        else
-        {
-            for (int i = 0; i < read_bites; i++) { printf("%c", buffer[i]); }
-        }
+
+        int start = pos[num - 1];
+        int len   = pos[num] - pos[num - 1];
+
+        if (lseek(fd, start, SEEK_SET) == -1) { perror("lseek"); break; }
+
+        char out[len];
+        if (read(fd, out, len) != len) { perror("read(line)"); break; }
+        write(STDOUT_FILENO, out, len);
+        if (len == 0 || out[len-1] != '\n') write(STDOUT_FILENO, "\n", 1);
     }
 }
